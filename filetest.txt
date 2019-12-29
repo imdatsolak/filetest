@@ -1,0 +1,293 @@
+			FILETEST - a tool to test the performance of a filesystem
+
+FILETEST is used to test the performance of a filesystem by creating, reading-from, writing-to*
+and deleting a large number of files on a filesystem.
+
+Please see LIMITATIONS for very strict technical limitations.
+
+USAGE
+	filetest -c <config-file-name> [-d ]
+
+	-c <config-file-name>	This option is mandatory and points to the full path of the config
+							file that contains all configuration options that FILETEST supports.
+
+	-d						Enable debug-logging. You should not use this option, it is for 
+							debugging purposes only. With this option enabled, FILETEST will 
+							write certain debug-log entries to STDOUT.
+
+SETUP
+	FILETEST uses rtc, so you may need to recompile it on the target machine before using it.
+	You can recompile just by running "makeft", which comes with the FILTEST-directory.
+
+	FILETEST so far has only been tested on OSX and Linux. I don't know if it can be compiled
+	on other *nix-flavors. It should probably NOT be able  to run on Windows - but who knows...
+
+
+CONFIGURATION
+	FILETEST requires a configuration file to run. It will NOT run without such a config file.
+	The configuration file must contain the following information:
+
+	fspath = <filesystem-path> 
+							This is the path to the filesystem to be checked. A normal directory,
+							soft-link or similar is enough.
+							WARNING: this path may NOT be longer than 3(!) characters, including
+							the slash (/) at the beginning! Otherwise file-test will crash and
+							burn.
+
+							The reason for this is that FILETEST stores the names of all of its
+							files in a structure that allows for a maximum of 34 characters to
+							be stored. This is stored in RAM and uses, depending on the number
+							of files to be created, large amounts of RAM. The 34 characters also
+							contain the other path components. Regardless os "why", do NOT use
+							more than three characters for the fspath
+
+
+	fsblksize = <numeric>	This is block-size of the underlying filesystem. It is important 
+							that you provide this information as FILETEST will try to create 
+							files that are NOT aligned to fsblksize in order to artificially
+							generate fragmentation. The <numeric> value is in bytes.
+
+
+	logfile = <path-to-logfile>
+							Absolute path to the logfile to be created (see LOGFILE FORMAT). If
+							FILETEST is run in "non-fork-mode" (fork=no), it will generate 
+							exactly this file.
+							If it runs in forked mode (fork=yes), it will create files with the
+							filename provided here with an ".0", ".1", and so on for each fork.
+							
+
+	minfilesize = <numeric>	This is the minimum size in bytes (padded if this amounts to the
+							fsblksize). The value is in bytes.
+
+
+	maxfilesize = <numeric> This is the maximum size of files in bytes (padded if needed). The
+							value is in bytes.
+
+
+	numfiles = <numeric>	This is the number of files to be created. Please note that FILETEST
+							may not be able to create this many files if the underlying file-
+							system doesn't have enough space left. FILETEST will NOT check for
+							available space. It will just try creating files until it crashes.
+							You also cannot use the average size of files between minfilesize
+							and maxfilesize at the actual average will depend on the fsw-param.
+							Just make sure there is enough space on the filesystem :-)
+
+
+	splitstatsevery = <numeric>
+							FILETEST will write statistics-entries into the logfile every this
+							many files created/read/deleted. Please keep this a reasonable 
+							number. For numfiles=1000000, I recommend to create log-entries every
+							10000 files. With this setting you control the granularity of the
+							log-entries.
+
+
+	readfiles = <yes|no>	FILETEST will always CREATE files, so no need to specify that. But
+							with this option, you specify whether FILETEST should also do a 
+							READ (sequential) on the files created. 
+
+
+	randomreads = <yes|no>	Should FILETEST perform RANDOM reads as well. In this case, FILETEST
+							will perform 3(!) RANDOM reads on RANDOM files. RANDOM reads means
+							that FILETEST will first choose a random file from the files it 
+							created to read from. Then, it will decide, randomly, from which
+							position to read how many (randomly decided) bytes from.
+							This process will repeated <numfiles>-times, so be careful whether
+							you really want to do this on a LARGE number of files.
+
+
+	writefiles = <yes|no>	NOT YET IMPLEMENTED!
+
+
+	deletefiles = <yes|no>	Should the files be deleted or left on the filesystem. Recommendation 
+							is to delete files. But if you want to see fragmentation, etc, after
+							a FILETEST run, it is recommended to set this option (together with
+							the option 'deletefilesafterlastrun') to 'no'.
+
+
+	deletefilesafterlastrun = <yes|no>
+							If you require FILETEST to run multiple times (i.e. perform the create,
+							read, read-random, delete) multiple times, each time creating numfiles
+							files, you need this option to specify whether you want the last-run
+							files to be deleted or left after FILETEST finishes. 
+
+
+	fsw0..fsw9 = <numeric>	You MUST provide percentages for each FILE-SIZE-WEIGHTING entry.
+							What does this parameter do?
+
+							Let's assume you requested FILETEST to create 1,000,000 miles. 
+							Let's also assume the minfilesize=4096 and maxfilesize=52000.
+
+							With fsw0..fsw9 you tell FILETEST how the file-size-distribution
+							should be weighed.
+							
+							Example:
+								fsw0 = 10
+								fsw1 = 10
+								fsw2 = 20
+								fsw3 = 10
+								fsw4 = 10
+								fsw5 = 5
+								fsw6 = 5
+								fsw7 = 10
+								fsw8 = 10
+								fsw9 = 10
+
+							In such a scenario, FILETEST will divide the range 4096..52000 bytes
+							into TEN ranges 'rangesize = ((4096 + 52000) / 2) / 10 ''.
+
+							It will then create 10% of the files (i.e. 100,000) in the lowest file-
+							size-range (rangesize + 4096 ... (2*rangesize)+4096)
+
+							20% (200,000 files) will be in the third-size-range, etc...
+
+							With this, you can more accurately simulate your own environment.
+
+							NOTE 1: the numbers MUST BE in integer (you can't say 10.5%!).
+							NOTE 2: the numbers MUST ADD TO 100%, otherwise your stats will screw up.
+
+
+	numruns = <numeric>		How many create/read/delete cycles should FILETEST perform. The higher
+							this number (and 'numfiles'), the longer it will take to complete a whole
+							execution of FILETEST.
+
+
+	fork = <yes|no>			If you have an environment, where many different applications write/read
+							on to the filesystem and you want to simulate that, you can do that
+							by asking FILETEST to run in a fork-ed version. If this is set to 'yes',
+							FILETEST will fork itself 9(!) times thus running a total of 10(!) 
+							instances of itself. Each forked instance will be responsible for one of
+							the fsw0..fsw9 above, meaning that the weighted files will be created in
+							parallel. Some will finish sooner than others.
+							Also, in fork-ed mode, FILETEST will create 10(!) different logfiles, one
+							for each fork. The logfiles will have extensions ".0"...".9".
+
+
+	randomizeorder = <yes|no>
+							NOT YET IMPLEMENTED.
+
+
+	waitaftercreate = <numeric>
+							Some filesystems require some time to flush their cache. FILETEST normally
+							creates files really, really, really fast. It is optimized for super-fast
+							file-creation. In such a case, you will see a very high file-creation-
+							number at the beginning, but over time, the fps in the logfiles will
+							decrease (in some cases dramatically). If you want to do a real-world 
+							benchmark, please allow the filesystem to flush its buffers.
+
+							If this config-param is set to '0', FILETEST will create one file after the
+							other and your filesystem may choke. It is recommended to set this 
+							parameter to something around '10000'. The wait is specified in microseconds,
+
+							1 microsecond  = 1/1000000 second
+							1/10th second  = 100000 useconds
+							1/100th second = 10000 useconds
+
+							This wait will be automatically removed from all statistics, do not worry :)
+
+	
+	LIMITATIONS
+							If you only do a "file creation test" (i.e., readfiles=no, randomreads=no,
+							writefiles=no, deletefiles=no, deleteafterlastrun=no), FILETEST will not
+							use much HEAP-RAM (around 'maxfilesize' + 45 bytes).
+
+							But if you set any of the readfiles, randomreads, writefiles, deletefiles, or
+							deletefilesafterlastrun to 'yes', you MUST have numfiles * 45 bytes of RAM
+							freely available for FILETEST, otherwise it will crash and burn.
+
+							As said before, FILETEST is trying to optimize itself so it doesn't waste time
+							on managing filenames, etc. 
+
+							Also, since FILETEST stores only 35 bytes for each filename, the fsname MUST
+							NOT BE more than 3(!) characters. If you have a filesystem mount, e.g. at
+
+											/mnt/myfilesystem
+
+							you should create a soft-link to it such as 
+
+											/ft
+
+							with the command "ln -s /mnt/myfilesyste /ft" and provide only '/ft' as the
+							name of the filesystem. FILETEST has no problems using softlinks. It is, 
+							though, preferable to NOT have a softlink as it needs to be dereferenced before
+							being used (most modern OS'es are quite fast on that and cache it, so don't
+							worry too much).
+
+							BUFFERED IO: FILETEST currently ALWAYS uses buffered I/O as it relies only
+							on fopen, fwrite/fread, fclose-commands. One day, it should be changed to
+							have this optional. But I felt that this reflects more real-world uses of
+							filesystems and implemented it this way.
+
+
+	LOGFILES
+							FILETEST creates log-entries in the following format:
+
+								1409305249777905408.0 "------------------------------------- MARK / RUN: #1 START --------------------------------------" "-"
+								1409305249777945600.0 "CrateFiles START" "-"
+								1409305249778253056.0 "CreateFilesForDecile [decile=0] START(4 File O/File Created)" "-"
+								1409305259999707392.0 "FILES CREATED [decile=0][numfiles=1000][curfileid=1000][bwritten=6529617][totaltime=100765440.0][bps=64800163.6][fps=9924.0][mBps=704018.9][xBps=139361213.2][aBps=64800163.6][mFps=9924.0][xFps=9924.0][aFps=9924.0][mFOps=39696.1][xFOps=39696.1][aFOps=39696.1]" "10221442304.0"
+								...
+								1409305402690466304.0 "FILES CREATED [decile=0][numfiles=1000][curfileid=15000][bwritten=6362063][totaltime=105688064.0][bps=60196608.4][fps=98.1][mBps=413823.4][xBps=137908307.6][aBps=66375721.7][mFps=98.1][xFps=11653.2][aFps=10292.1][mFOps=392.4][xFOps=46612.8][aFOps=41168.2]" "10194013440.0"
+								1409305402690524672.0 "CreateFilesForDecile [decile=0] END" "[152912271616.0]"
+								1409305402690537216.0 "CreateFilesForDecile [decile=1] START(4 File O/File Created)" "-"
+								...
+								1409305606934502144.0 "CreateFilesForDecile [decile=1] END" "[204243964928.0]"
+								1409305606934515712.0 "CreateFilesForDecile [decile=2] START(4 File O/File Created)" "-"
+								...
+								and so on
+								1409306272081954560.0 "DeleteFiles START" "-"
+								1409306272081966592.0 "DeleteFilesForDecile [decile=0] START (1 File O/File Deleted)" "-"
+								1409306272111046400.0 "FILES DELETED [decile=0][numfiles=1000][curfileid=1000][bdeleted=6529617][totaltime=29070336.0][bps=224614431.7][fps=34399.3][mBps=224614431.7][xBps=224614431.7][aBps=224614431.7][mFps=34399.3][xFps=34399.3][aFps=34399.3][mFOps=34399.3][xFOps=34399.3][aFOps=34399.3]" "[29070336.0]"
+								...
+								1409306272426105600.0 "FILES DELETED [decile=0][numfiles=1000][curfileid=15000][bdeleted=6362063][totaltime=15509248.0][bps=410210927.1][fps=64477.7][mBps=201451159.5][xBps=430831783.3][aBps=415666132.6][mFps=31104.2][xFps=66582.3][aFps=64884.7][mFO=31104.2][xFO=66582.3][aFO=64884.7]" "[15509248.0]"
+								1409306272426133248.0 "DeleteFilesForDecile [decile=0] END" "[344166656.0]"
+								1409306272426138624.0 "DeleteFilesForDecile [decile=1] START (1 File O/File Deleted)" "-"
+								...
+								1409306272539363584.0 "DeleteFilesForDecile [decile=1] END" "[113224960.0]"
+								1409306272539368704.0 "DeleteFilesForDecile [decile=2] START (1 File O/File Deleted)" "-"
+								...
+								1409305249777905408.0 "------------------------------------- MARK / RUN: #1 END --------------------------------------" "1022881953536.0"
+
+							"MARK / RUN" will show the current run of FILETEST (influenced by 'numruns')
+							"CreateFiles START" - this shows the begin of the FILE-CREATION process
+							"CreateFilesForDecile [decile=n]" - this shows which of fsw0..fsw9 is being processed
+							"FILES CREATED":
+								14...:			Time stamp of this entry in NANO-Seconds
+								decile:			which of fsw0..fsw9
+								numfiles:		how many files were created for this log-entry (identical to 'splitstatsevery')
+								curefileid:		total mumber of files created in this decile so far
+								bwritten:		how many bytes were written for this log-entry
+								totaltime:		total time it took to write those files/bytes (milli-seconds)
+								bps:            bytes written per second for this log-entry
+								fps:			files-per-second for this log-entry
+								mBps:			minimum bytes per second for this log-entry
+								xBps:			maximum bytes per second for this log-entry
+								aBps:			average bytes per second for this log-entry
+								mFps:			minium files per second
+								xFps:			maximum files per second
+								aFps:			average files per second
+								mFOps:			minimum FILE OPERATIONS per second
+								xFOps:			maximum FILE OPERATIONS per second
+								aFOps:			average FILE OPEREATIONS per second
+
+							The same format is true for "DELETE", "READ", "RANDOMREAD", etc.
+
+							If FILETEST is NOT run in forked mode, you should always find "decile=0" ... "decile=9". 
+							If FILETEST IS running in forked mode, you will only find ONE decile per log-file. The decile-
+							number should be identical to the extension of the logfile.
+
+							TODO: FILETEST, in a later release, will switch the log-format to more traditional formats
+							to be easier for using in log-analysis tools. At the momen, it is what it is...
+
+
+	Having said all this, go ahead and have fun. Please have a log at the example config-file to see how to
+	configure it. 
+
+	NOTE: Filetest is not very gracious about syntax errors in the config-file, so please try to stick to 
+	the example-format I have provided. One day, I will include a config-file read-library, but for now 
+	I'm doing it 'manually' :)
+
+	LASTLY FILETEST should try to catch as many errors as possible, but it doesn't do so. Please, allow me some
+	leeway until I fix that.
+
+	Imdat Solak
+	August 29, 2014
